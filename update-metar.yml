@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     - cron: "*/10 * * * *"
+    - cron: "51 * * * *"
 
 permissions:
   contents: write
@@ -15,75 +16,144 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch latest LTBD METAR and embed it
+      - name: Fetch latest LTBD observation
         shell: bash
         run: |
           set -euo pipefail
 
-          code="$(curl -sS \
-            -A "C172-LTBD-Performance/3.0 GitHub-Actions" \
-            -w "%{http_code}" \
-            -o /tmp/metar.json \
-            "https://aviationweather.gov/api/data/metar?ids=LTBD&format=json")"
-
-          if [ "$code" != "200" ]; then
-            echo "METAR HTTP $code; keeping previous METAR."
-            exit 0
-          fi
-
-          if ! jq -e 'type=="array" and length>0 and .[0].rawOb' /tmp/metar.json >/dev/null; then
-            echo "No valid LTBD METAR returned; keeping previous METAR."
-            exit 0
-          fi
-
           python3 - <<'PY'
-          import json, re
+          import html as htmlmod
+          import json
+          import re
+          import urllib.request
           from pathlib import Path
+          from datetime import datetime, timezone, timedelta
 
-          src = json.loads(Path("/tmp/metar.json").read_text())[0]
+          MGM_URL = "https://rasat.mgm.gov.tr/result?stations=LTBD&obsType=1&obsType=2&hours=0"
+          AWC_URL = "https://aviationweather.gov/api/data/metar?ids=LTBD&format=json"
 
-          m = {
-              "rawOb": src.get("rawOb", ""),
-              "reportTime": src.get("reportTime") or src.get("obsTime"),
-              "temp": src.get("temp"),
-              "wdir": src.get("wdir"),
-              "wspd": src.get("wspd"),
-              "wgst": src.get("wgst"),
-              "altim": src.get("altim"),
-          }
+          def fetch(url):
+              req = urllib.request.Request(
+                  url,
+                  headers={
+                      "User-Agent": "C172-LTBD-Performance/10 GitHub-Actions",
+                      "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
+                      "Cache-Control": "no-cache",
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=30) as r:
+                  return r.read().decode("utf-8", errors="replace")
 
-          # API altimeter may be in inHg. Convert to hPa when needed.
+          def report_datetime(group):
+              now = datetime.now(timezone.utc)
+              day = int(group[0:2])
+              hour = int(group[2:4])
+              minute = int(group[4:6])
+              candidates = []
+              for shift in (-1, 0, 1):
+                  y = now.year
+                  m = now.month + shift
+                  while m < 1:
+                      y -= 1
+                      m += 12
+                  while m > 12:
+                      y += 1
+                      m -= 12
+                  try:
+                      candidates.append(datetime(y, m, day, hour, minute, tzinfo=timezone.utc))
+                  except ValueError:
+                      pass
+              past = [x for x in candidates if x <= now + timedelta(minutes=5)]
+              return max(past) if past else min(candidates, key=lambda x: abs(x-now))
+
+          def parse_raw(raw, source):
+              raw = re.sub(r"\s+", " ", raw).strip().rstrip("=").strip()
+              tm = re.search(r"\b(\d{6}Z)\b", raw)
+              wind = re.search(r"\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b", raw)
+              temp = re.search(r"\b(M?\d{2})/(M?\d{2}|//)\b", raw)
+              qnh = re.search(r"\bQ(\d{4})\b", raw)
+
+              def signed(s):
+                  if s is None:
+                      return None
+                  return -int(s[1:]) if s.startswith("M") else int(s)
+
+              return {
+                  "rawOb": raw,
+                  "obsGroup": tm.group(1) if tm else None,
+                  "temp": signed(temp.group(1)) if temp else None,
+                  "wdir": None if (not wind or wind.group(1) == "VRB") else int(wind.group(1)),
+                  "wspd": int(wind.group(2)) if wind else None,
+                  "wgst": int(wind.group(3)) if wind and wind.group(3) else None,
+                  "altim": int(qnh.group(1)) if qnh else None,
+                  "source": source,
+              }
+
+          metar = None
+
+          # PRIMARY: MGM Rasat
           try:
-              a=float(m["altim"])
-              if a < 100:
-                  m["altim"]=round(a*33.8638866667)
-          except Exception:
-              pass
+              page = htmlmod.unescape(fetch(MGM_URL))
+              text = re.sub(r"<[^>]+>", "\n", page)
+              text = re.sub(r"[ \t]+", " ", text)
+              reports = re.findall(
+                  r"\b(?:METAR|SPECI)\s+LTBD\s+\d{6}Z[^\r\n]*",
+                  text,
+                  flags=re.I,
+              )
+              cleaned = []
+              for x in reports:
+                  x = re.sub(r"\s+", " ", x).strip().rstrip("=").strip()
+                  g = re.search(r"\b(\d{6}Z)\b", x)
+                  if g:
+                      cleaned.append((report_datetime(g.group(1)), x))
+              if cleaned:
+                  cleaned.sort(key=lambda t: t[0], reverse=True)
+                  metar = parse_raw(cleaned[0][1], "MGM Rasat")
+                  print("MGM:", metar["rawOb"])
+          except Exception as e:
+              print("MGM fetch failed:", repr(e))
 
-          p=Path("index.html")
-          txt=p.read_text(encoding="utf-8")
-          payload=json.dumps(m,ensure_ascii=False,separators=(",",":"))
-          block=(
+          # FALLBACK: AviationWeather.gov only if MGM failed.
+          if metar is None:
+              try:
+                  data = json.loads(fetch(AWC_URL))
+                  if isinstance(data, list) and data and data[0].get("rawOb"):
+                      metar = parse_raw(data[0]["rawOb"], "AviationWeather.gov fallback")
+                      print("AWC fallback:", metar["rawOb"])
+              except Exception as e:
+                  print("AWC fallback failed:", repr(e))
+
+          if metar is None:
+              raise SystemExit("No usable LTBD METAR/SPECI found.")
+
+          p = Path("index.html")
+          txt = p.read_text(encoding="utf-8")
+          payload = json.dumps(metar, ensure_ascii=False, separators=(",", ":"))
+          block = (
               '<!-- METAR_AUTO_START -->\n'
               '<script id="embedded-metar" type="application/json">\n'
               + payload +
               '\n</script>\n'
               '<!-- METAR_AUTO_END -->'
           )
-          txt2,n=re.subn(
+          txt2, n = re.subn(
               r'<!-- METAR_AUTO_START -->.*?<!-- METAR_AUTO_END -->',
-              block,txt,count=1,flags=re.S
+              block,
+              txt,
+              count=1,
+              flags=re.S,
           )
           if n != 1:
-              raise SystemExit("METAR block not found")
-          p.write_text(txt2,encoding="utf-8")
+              raise SystemExit("METAR block not found in index.html")
+          p.write_text(txt2, encoding="utf-8")
           PY
 
-      - name: Commit if METAR changed
+      - name: Commit if observation changed
         shell: bash
         run: |
           if git diff --quiet -- index.html; then
-            echo "No METAR change."
+            echo "No LTBD observation change."
             exit 0
           fi
           git config user.name "github-actions[bot]"
