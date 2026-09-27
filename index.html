@@ -1,0 +1,662 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#f5f5f7">
+<title>C172 • LTBD Performance</title>
+<style>
+:root{
+  --bg:#f5f5f7;--card:rgba(255,255,255,.80);--text:#1d1d1f;--muted:#6e6e73;
+  --line:rgba(60,60,67,.14);--accent:#0071e3;--ok:#178a45;--warn:#b46800;--bad:#d92d20;
+  --shadow:0 18px 55px rgba(0,0,0,.08);--radius:28px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;color:var(--text);
+  background:
+    radial-gradient(circle at 10% 0%,rgba(0,113,227,.09),transparent 32rem),
+    radial-gradient(circle at 95% 8%,rgba(90,200,250,.10),transparent 28rem),
+    var(--bg);
+  font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text",Inter,system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased
+}
+.wrap{max-width:1160px;margin:auto;padding:34px 18px 70px}
+.top{display:flex;justify-content:space-between;align-items:flex-end;gap:20px;margin-bottom:24px}
+.eyebrow{font-size:13px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:clamp(36px,6vw,66px);line-height:.98;letter-spacing:-.052em;margin:8px 0 10px}
+.sub{max-width:760px;color:var(--muted);font-size:17px;line-height:1.5}
+.badge{white-space:nowrap;border:1px solid var(--line);background:rgba(255,255,255,.62);backdrop-filter:blur(18px);padding:10px 13px;border-radius:999px;font-size:13px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1.02fr .98fr;gap:18px}
+.card{background:var(--card);border:1px solid rgba(255,255,255,.88);border-radius:var(--radius);box-shadow:var(--shadow);backdrop-filter:blur(28px) saturate(160%);padding:24px}
+.card h2{font-size:20px;letter-spacing:-.02em;margin:0 0 16px}
+.section-title{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.tiny{font-size:12px;color:var(--muted)}
+.rwy-switch{display:grid;grid-template-columns:1fr 1fr;gap:7px;background:#ececf0;border-radius:16px;padding:5px}
+.rwy-switch button{border:0;border-radius:12px;padding:12px 16px;background:transparent;color:var(--muted);font-weight:800;font-size:16px;cursor:pointer;transition:.2s}
+.rwy-switch button.active{background:#fff;color:var(--text);box-shadow:0 2px 10px rgba(0,0,0,.08)}
+.airport-line{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:15px}
+.mini{padding:13px 14px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.46)}
+.mini span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.mini strong{font-size:15px;letter-spacing:-.01em}
+
+.visual{position:relative;height:318px;border-radius:23px;overflow:hidden;margin-top:16px;background:linear-gradient(180deg,#fafafa,#e9e9ed)}
+.visual::before{content:"";position:absolute;inset:0;background:radial-gradient(circle at 50% 50%,rgba(255,255,255,.8),transparent 55%)}
+.north{position:absolute;right:15px;top:13px;z-index:7;font-size:11px;font-weight:900;color:var(--muted);text-align:center}
+.north::after{content:"↑";display:block;font-size:24px;line-height:18px;color:var(--text)}
+.runway{
+  position:absolute;left:5%;right:5%;top:50%;height:112px;transform:translateY(-50%);
+  background:#363639;border-radius:8px;box-shadow:inset 0 0 0 2px rgba(255,255,255,.06),0 10px 28px rgba(0,0,0,.14);z-index:2
+}
+.centerline{
+  position:absolute;left:58px;right:58px;top:50%;height:3px;transform:translateY(-50%);
+  background:repeating-linear-gradient(90deg,rgba(255,255,255,.92) 0 34px,transparent 34px 66px)
+}
+.edge.top{position:absolute;left:12px;right:12px;top:9px;height:2px;background:rgba(255,255,255,.8)}
+.edge.bottom{position:absolute;left:12px;right:12px;bottom:9px;height:2px;background:rgba(255,255,255,.8)}
+.threshold{position:absolute;top:12px;bottom:12px;width:46px;border-left:4px solid white;border-right:2px solid rgba(255,255,255,.8)}
+.threshold.left{left:18px}.threshold.right{right:18px}
+.stripes{position:absolute;top:17px;bottom:17px;width:30px;background:repeating-linear-gradient(0deg,#fff 0 6px,transparent 6px 12px)}
+.stripes.left{left:27px}.stripes.right{right:27px}
+.rwy-label{position:absolute;top:50%;transform:translateY(-50%);color:#fff;font-size:29px;font-weight:900;letter-spacing:.04em;line-height:1;text-shadow:0 1px 2px rgba(0,0,0,.3)}
+.rwy-label.left{left:82px}.rwy-label.right{right:82px;transform:translateY(-50%) rotate(180deg)}
+
+.plane-wrap{
+  position:absolute;left:50%;top:50%;width:164px;height:116px;z-index:5;
+  transform:translate(-50%,-50%) rotate(0deg);transition:transform .38s cubic-bezier(.2,.8,.2,1),left .38s ease;
+  filter:drop-shadow(0 10px 9px rgba(0,0,0,.26))
+}
+.plane-wrap.rwy27{transform:translate(-50%,-50%) rotate(180deg)}
+.c172{width:100%;height:100%;overflow:visible}
+.wind-svg{position:absolute;inset:0;width:100%;height:100%;z-index:6;pointer-events:none}
+.wind-info{position:absolute;left:14px;top:14px;z-index:8;background:rgba(255,255,255,.88);backdrop-filter:blur(14px);padding:9px 11px;border-radius:13px;font-size:12px;font-weight:800}
+.components{position:absolute;right:14px;bottom:14px;z-index:8;display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end;max-width:75%}
+.pill{background:rgba(255,255,255,.9);backdrop-filter:blur(12px);padding:8px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.runway-tip{margin-top:10px;border:1px solid var(--line);background:rgba(255,255,255,.5);border-radius:15px;padding:10px 12px;color:var(--muted);font-size:12px;line-height:1.45}
+.runway-tip strong{color:var(--text)}
+
+.metar{margin-bottom:19px}
+.metar-row{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.status{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--muted)}
+.dot{width:8px;height:8px;border-radius:50%;background:#8e8e93}
+.dot.ok{background:#30d158}.dot.warn{background:#ff9f0a}
+.btn-small{border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px 12px;font-weight:750;cursor:pointer;color:var(--text);text-decoration:none;font-size:13px}
+.raw{margin-top:12px;padding:12px 14px;border-radius:15px;background:rgba(118,118,128,.08);font:600 12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;overflow-wrap:anywhere;color:#3a3a3c;min-height:44px}
+
+.weather-fields{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.weight-zone{margin-top:17px;padding-top:17px;border-top:1px solid var(--line)}
+.weight-shell{padding:15px;border:1px solid rgba(0,113,227,.15);background:rgba(0,113,227,.055);border-radius:19px}
+.weight-shell label{color:var(--text);font-size:13px}
+label{display:block;font-size:12px;font-weight:750;color:var(--muted);margin:0 0 7px 2px}
+.input-wrap{position:relative}
+input{
+  width:100%;border:1px solid var(--line);border-radius:15px;background:rgba(255,255,255,.84);
+  font-size:18px;font-weight:680;color:var(--text);padding:14px 48px 14px 14px;outline:none;transition:.15s
+}
+input:focus{border-color:rgba(0,113,227,.55);box-shadow:0 0 0 4px rgba(0,113,227,.10)}
+.weight-shell input{font-size:25px;padding-top:15px;padding-bottom:15px}
+.unit{position:absolute;right:14px;top:50%;transform:translateY(-50%);color:var(--muted);font-size:13px;font-weight:750}
+.calc{width:100%;border:0;border-radius:17px;padding:16px 20px;margin-top:16px;background:var(--text);color:white;font-size:17px;font-weight:850;cursor:pointer;transition:.18s}
+.calc:hover{transform:translateY(-1px);box-shadow:0 8px 24px rgba(0,0,0,.14)}
+.calc:active{transform:scale(.99)}
+.hint{font-size:12px;line-height:1.45;color:var(--muted);margin-top:12px}
+details{margin-top:12px}
+summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
+.manual-metar{margin-top:10px}
+.manual-metar input{font:600 12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;padding-right:14px}
+
+.results{grid-column:1/-1;display:none}
+.results.show{display:block}
+.result-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
+.result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.result{border:1px solid var(--line);background:rgba(255,255,255,.64);border-radius:20px;padding:18px;min-height:132px;display:flex;flex-direction:column;justify-content:space-between}
+.result .name{color:var(--muted);font-size:12px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+.result .value{font-size:34px;font-weight:850;letter-spacing:-.04em;margin-top:9px}
+.result .metric{font-size:13px;color:var(--muted);margin-top:2px}
+.bar{height:6px;background:#e5e5ea;border-radius:99px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
+.details{display:grid;grid-template-columns:1.15fr .85fr;gap:12px;margin-top:12px}
+.detailbox{border:1px solid var(--line);border-radius:19px;padding:17px;background:rgba(255,255,255,.48)}
+.detailbox h3{font-size:14px;margin:0 0 11px}
+.kv{display:grid;grid-template-columns:1fr auto;gap:8px 18px;font-size:13px}
+.kv div:nth-child(odd){color:var(--muted)}.kv div:nth-child(even){font-weight:780;text-align:right}
+.notice{margin-top:12px;border-radius:17px;padding:13px 15px;font-size:13px;line-height:1.45;background:#fff8e8;color:#6b4500;border:1px solid rgba(180,104,0,.16)}
+.notice.bad{background:#fff0ef;color:#8d1b13;border-color:rgba(217,45,32,.18)}
+
+@media(max-width:900px){.weather-fields{grid-template-columns:1fr 1fr}}
+@media(max-width:820px){.grid{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.badge{white-space:normal}.result-grid{grid-template-columns:1fr 1fr}.details{grid-template-columns:1fr}}
+@media(max-width:520px){
+  .wrap{padding:22px 12px 50px}.card{padding:18px;border-radius:23px}
+  .airport-line{grid-template-columns:1fr 1fr}.airport-line .mini:last-child{grid-column:1/-1}
+  .weather-fields{grid-template-columns:1fr 1fr}.visual{height:278px}
+  .result-grid{grid-template-columns:1fr}.plane-wrap{width:138px;height:98px}
+  .rwy-label.left{left:68px}.rwy-label.right{right:68px}
+}
+@media(prefers-color-scheme:dark){
+  :root{--bg:#0f0f10;--card:rgba(29,29,31,.74);--text:#f5f5f7;--muted:#a1a1a6;--line:rgba(255,255,255,.11);--shadow:0 18px 55px rgba(0,0,0,.26)}
+  body{background:radial-gradient(circle at 10% 0%,rgba(10,132,255,.12),transparent 30rem),#0f0f10}
+  .rwy-switch{background:#2c2c2e}.rwy-switch button.active{background:#444446;color:white}
+  .mini,input,.btn-small{background:rgba(44,44,46,.82)}.visual{background:linear-gradient(180deg,#232325,#161617)}
+  .wind-info,.pill{background:rgba(44,44,46,.9)}.raw{color:#d1d1d6}.result,.detailbox{background:rgba(44,44,46,.56)}
+  .weight-shell{background:rgba(10,132,255,.08)}.notice{background:#3b2b0b;color:#ffd98a}.notice.bad{background:#3b1715;color:#ffb4ad}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <div>
+      <div class="eyebrow">Cessna 172S · GFC 700 · LTBD</div>
+      <h1>Performance,<br>hızlı ve temiz.</h1>
+      <div class="sub">RWY 09 / 27 tam pist için konservatif POH hesabı. Son LTBD METAR otomatik gelirse hava alanları kendiliğinden dolar; sen yalnızca takeoff weight girip hesaplayabilirsin.</div>
+    </div>
+    <div class="badge">LTBD · 4,708 × 98 ft</div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <div class="section-title">
+        <h2>Pist</h2>
+        <div class="tiny">Full length · concrete · dry</div>
+      </div>
+
+      <div class="rwy-switch">
+        <button id="rwy09" class="active" type="button">RWY 09</button>
+        <button id="rwy27" type="button">RWY 27</button>
+      </div>
+
+      <div class="airport-line">
+        <div class="mini"><span>Heading</span><strong id="headingText">087°M · 091.50°T</strong></div>
+        <div class="mini"><span>TDZ Elev.</span><strong id="elevText">100 ft</strong></div>
+        <div class="mini"><span>Available</span><strong>4,708 ft</strong></div>
+      </div>
+
+      <div class="visual" id="visual">
+        <div class="north">N</div>
+
+        <div class="runway">
+          <div class="edge top"></div><div class="edge bottom"></div>
+          <div class="centerline"></div>
+          <div class="threshold left"></div><div class="threshold right"></div>
+          <div class="stripes left"></div><div class="stripes right"></div>
+          <div class="rwy-label left">09</div>
+          <div class="rwy-label right">27</div>
+        </div>
+
+        <div class="plane-wrap" id="planeWrap" aria-label="Cessna 172 top view">
+          <svg class="c172" viewBox="0 0 210 140" aria-hidden="true">
+            <!-- simplified top-down high-wing C172 silhouette -->
+            <g stroke="#1d1d1f" stroke-width="2.1" stroke-linejoin="round">
+              <path fill="#f7f7f8" d="M198 70
+                C190 62 179 59 166 58
+                L142 56
+                L126 27
+                L117 27
+                L122 55
+                L91 52
+                L76 19
+                L67 19
+                L74 52
+                L35 50
+                L20 42
+                L11 44
+                L24 61
+                L24 79
+                L11 96
+                L20 98
+                L35 90
+                L74 88
+                L67 121
+                L76 121
+                L91 88
+                L122 85
+                L117 113
+                L126 113
+                L142 84
+                L166 82
+                C179 81 190 78 198 70Z"/>
+              <path fill="#b9dcff" d="M143 61 L169 63 C178 64 185 66 190 70 C185 74 178 76 169 77 L143 79Z"/>
+              <path fill="#dfe2e5" d="M24 61 L74 56 L74 84 L24 79Z"/>
+              <path fill="#ffffff" d="M85 54 L129 58 L129 82 L85 86Z"/>
+              <circle cx="151" cy="58" r="3.2" fill="#34c759" stroke="none"/>
+              <circle cx="151" cy="82" r="3.2" fill="#ff453a" stroke="none"/>
+            </g>
+          </svg>
+        </div>
+
+        <svg class="wind-svg" id="windSvg" viewBox="0 0 1000 500" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <marker id="arrowHead" markerWidth="12" markerHeight="12" refX="8" refY="5" orient="auto" markerUnits="strokeWidth">
+              <path d="M0,0 L0,10 L10,5 z" fill="#0071e3"></path>
+            </marker>
+          </defs>
+          <line id="windLine" x1="500" y1="80" x2="500" y2="420" stroke="#0071e3" stroke-width="6" stroke-linecap="round" marker-end="url(#arrowHead)" opacity=".22"/>
+        </svg>
+
+        <div class="wind-info" id="windLabel">Wind —</div>
+        <div class="components">
+          <div class="pill" id="headPill">H/T —</div>
+          <div class="pill" id="crossPill">XW —</div>
+        </div>
+      </div>
+
+      <div class="runway-tip" id="runwayTip">
+        METAR normalde “aktif pist” söylemez. Rüzgâr geldiğinde burada hangi pistin daha fazla headwind verdiğini göstereceğim; gerçek pist seçimi yine ATC/operasyon bilgisidir.
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="metar">
+        <div class="metar-row">
+          <div>
+            <h2 style="margin-bottom:5px">Son LTBD METAR</h2>
+            <div class="status"><span class="dot" id="metarDot"></span><span id="metarStatus">Otomatik veri bekleniyor</span></div>
+          </div>
+          <div style="display:flex;gap:7px">
+            <a class="btn-small" href="https://hezarfen.mgm.gov.tr/HzUsr/default.aspx" target="_blank" rel="noopener">Hezarfen</a>
+            <button class="btn-small" id="reloadMetar" type="button">Sayfayı yenile</button>
+          </div>
+        </div>
+        <div class="raw" id="rawMetar">GitHub Action ilk kez çalıştıktan sonra son LTBD METAR burada otomatik görünür.</div>
+      </div>
+
+      <h2>Hava</h2>
+      <div class="weather-fields">
+        <div>
+          <label for="oat">Sıcaklık</label>
+          <div class="input-wrap"><input id="oat" inputmode="decimal" placeholder="21"><span class="unit">°C</span></div>
+        </div>
+        <div>
+          <label for="qnh">QNH</label>
+          <div class="input-wrap"><input id="qnh" inputmode="decimal" placeholder="1015"><span class="unit">hPa</span></div>
+        </div>
+        <div>
+          <label for="windDir">Wind Dir.</label>
+          <div class="input-wrap"><input id="windDir" inputmode="numeric" placeholder="070"><span class="unit">°T</span></div>
+        </div>
+        <div>
+          <label for="windSpd">Wind</label>
+          <div class="input-wrap"><input id="windSpd" inputmode="decimal" placeholder="6"><span class="unit">kt</span></div>
+        </div>
+      </div>
+
+      <div class="weight-zone">
+        <div class="weight-shell">
+          <label for="weight">Takeoff Weight · Mass & Balance</label>
+          <div class="input-wrap"><input id="weight" inputmode="decimal" placeholder="Örn. 2115"><span class="unit">lb</span></div>
+        </div>
+      </div>
+
+      <details>
+        <summary>Raw METAR yapıştır</summary>
+        <div class="manual-metar">
+          <input id="metarPaste" placeholder="METAR LTBD 270450Z 07006KT CAVOK 21/06 Q1015 ..." />
+          <button class="btn-small" id="parseMetar" type="button" style="margin-top:8px">METAR'ı doldur</button>
+        </div>
+      </details>
+
+      <button class="calc" id="calculate" type="button">Hesapla</button>
+      <div class="hint">POH conservative yöntem: gerçek weight / pressure altitude / temperature değerinin bir sonraki yüksek tablo değeri kullanılır.</div>
+    </section>
+
+    <section class="card results" id="results">
+      <div class="result-head">
+        <div>
+          <div class="eyebrow">Corrected performance</div>
+          <h2 style="margin:4px 0 0">Sonuçlar</h2>
+        </div>
+        <div class="badge" id="runwayBadge">RWY 09 · 4,708 ft available</div>
+      </div>
+
+      <div class="result-grid">
+        <div class="result">
+          <div><div class="name">Takeoff Roll</div><div class="value" id="toRoll">—</div><div class="metric" id="toRollM">—</div></div>
+          <div class="bar"><i id="toRollBar"></i></div>
+        </div>
+        <div class="result">
+          <div><div class="name">Takeoff · 50 ft</div><div class="value" id="to50">—</div><div class="metric" id="to50M">—</div></div>
+          <div class="bar"><i id="to50Bar"></i></div>
+        </div>
+        <div class="result">
+          <div><div class="name">Landing Roll</div><div class="value" id="ldgRoll">—</div><div class="metric" id="ldgRollM">—</div></div>
+          <div class="bar"><i id="ldgRollBar"></i></div>
+        </div>
+        <div class="result">
+          <div><div class="name">Landing · 50 ft</div><div class="value" id="ldg50">—</div><div class="metric" id="ldg50M">—</div></div>
+          <div class="bar"><i id="ldg50Bar"></i></div>
+        </div>
+      </div>
+
+      <div class="details">
+        <div class="detailbox">
+          <h3>POH conservative cell</h3>
+          <div class="kv">
+            <div>Takeoff weight</div><div id="dWeight">—</div>
+            <div>Pressure altitude</div><div id="dPA">—</div>
+            <div>Temperature</div><div id="dTemp">—</div>
+            <div>Zero-wind TO</div><div id="dTOBase">—</div>
+            <div>Zero-wind landing</div><div id="dLdgBase">—</div>
+          </div>
+        </div>
+
+        <div class="detailbox">
+          <h3>Wind correction</h3>
+          <div class="kv">
+            <div>Runway true bearing</div><div id="dRwyTrue">—</div>
+            <div>Component</div><div id="dComponent">—</div>
+            <div>POH correction</div><div id="dWindPct">—</div>
+            <div>50-ft margin (TO)</div><div id="dTOMargin">—</div>
+            <div>50-ft margin (LDG)</div><div id="dLdgMargin">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="notice" id="notice">—</div>
+    </section>
+  </div>
+</div>
+
+<!-- METAR_AUTO_START -->
+<script id="embedded-metar" type="application/json">
+{"rawOb":"","note":"GitHub Action çalışınca en son LTBD METAR buraya otomatik yazılır."}
+</script>
+<!-- METAR_AUTO_END -->
+
+<script>
+"use strict";
+
+const RUNWAYS={
+  "09":{magnetic:87,trueBearing:91.50,elevation:100,reciprocal:"27"},
+  "27":{magnetic:267,trueBearing:271.51,elevation:104,reciprocal:"09"}
+};
+const RUNWAY_LENGTH_FT=4708;
+
+const TAKEOFF={
+2550:{
+0:[[860,1465],[925,1575],[995,1690],[1070,1810],[1150,1945]],
+1000:[[940,1600],[1010,1720],[1090,1850],[1170,1990],[1260,2135]],
+2000:[[1025,1755],[1110,1890],[1195,2035],[1285,2190],[1380,2355]],
+3000:[[1125,1925],[1215,2080],[1310,2240],[1410,2420],[1515,2605]],
+4000:[[1235,2120],[1335,2295],[1440,2480],[1550,2685],[1660,2880]],
+5000:[[1355,2345],[1465,2545],[1585,2755],[1705,2975],[1825,3205]],
+6000:[[1495,2605],[1615,2830],[1745,3075],[1875,3320],[2010,3585]],
+7000:[[1645,2910],[1785,3170],[1920,3440],[2065,3730],[2215,4045]],
+8000:[[1820,3265],[1970,3575],[2120,3880],[2280,4225],[2450,4615]]
+},
+2400:{
+0:[[745,1275],[800,1370],[860,1470],[925,1570],[995,1685]],
+1000:[[810,1390],[875,1495],[940,1605],[1010,1720],[1085,1845]],
+2000:[[885,1520],[955,1635],[1030,1760],[1110,1890],[1190,2030]],
+3000:[[970,1665],[1050,1795],[1130,1930],[1215,2080],[1305,2230]],
+4000:[[1065,1830],[1150,1975],[1240,2130],[1335,2295],[1430,2455]],
+5000:[[1170,2015],[1265,2180],[1360,2355],[1465,2530],[1570,2715]],
+6000:[[1285,2230],[1390,2410],[1500,2610],[1610,2805],[1725,3015]],
+7000:[[1415,2470],[1530,2685],[1650,2900],[1770,3125],[1900,3370]],
+8000:[[1560,2755],[1690,3000],[1815,3240],[1950,3500],[2095,3790]]
+},
+2200:{
+0:[[610,1055],[655,1130],[705,1205],[760,1290],[815,1380]],
+1000:[[665,1145],[720,1230],[770,1315],[830,1410],[890,1505]],
+2000:[[725,1250],[785,1340],[845,1435],[905,1540],[975,1650]],
+3000:[[795,1365],[860,1465],[925,1570],[995,1685],[1065,1805]],
+4000:[[870,1490],[940,1605],[1010,1725],[1090,1855],[1165,1975]],
+5000:[[955,1635],[1030,1765],[1110,1900],[1195,2035],[1275,2175]],
+6000:[[1050,1800],[1130,1940],[1220,2090],[1310,2240],[1400,2395]],
+7000:[[1150,1985],[1245,2145],[1340,2305],[1435,2475],[1540,2650]],
+8000:[[1270,2195],[1370,2375],[1475,2555],[1580,2745],[1695,2950]]
+}};
+
+const LANDING={
+0:[[545,1290],[565,1320],[585,1350],[605,1380],[625,1415]],
+1000:[[565,1320],[585,1350],[605,1385],[625,1420],[650,1450]],
+2000:[[585,1355],[610,1385],[630,1420],[650,1455],[670,1490]],
+3000:[[610,1385],[630,1425],[655,1460],[675,1495],[695,1530]],
+4000:[[630,1425],[655,1460],[675,1495],[700,1535],[725,1570]],
+5000:[[655,1460],[680,1500],[705,1535],[725,1575],[750,1615]],
+6000:[[680,1500],[705,1540],[730,1580],[755,1620],[780,1660]],
+7000:[[705,1545],[730,1585],[760,1625],[785,1665],[810,1705]],
+8000:[[735,1585],[760,1630],[790,1670],[815,1715],[840,1755]]
+};
+
+const TEMPS=[0,10,20,30,40];
+const ALTITUDES=[0,1000,2000,3000,4000,5000,6000,7000,8000];
+const WEIGHTS=[2200,2400,2550];
+const $=id=>document.getElementById(id);
+let selectedRunway="09";
+let runwayManuallySelected=false;
+
+function blank(id){return $(id).value.trim()===""}
+function num(id){return Number($(id).value)}
+function normalizeAngle(a){return ((a+180)%360+360)%360-180}
+function ftToM(ft){return Math.round(ft*.3048)}
+function pressureAltitude(elevFt,qnh){return elevFt+(1013.25-qnh)*27.0}
+
+function selectConservative(value,choices,name){
+  if(!Number.isFinite(value))throw new Error(name+" geçerli değil.");
+  if(value<=choices[0])return choices[0];
+  for(const c of choices){if(value<=c)return c}
+  throw new Error(name+" POH tablosunun dışında.");
+}
+
+function windComponents(windDirTrue,windSpeed,runwayTrue){
+  const delta=normalizeAngle(windDirTrue-runwayTrue)*Math.PI/180;
+  return {along:windSpeed*Math.cos(delta),cross:windSpeed*Math.sin(delta)}
+}
+function pohWindCorrectionPercent(alongKt){
+  if(alongKt>=0)return -Math.round((alongKt/9)*10);
+  return Math.round((Math.abs(alongKt)/2)*10);
+}
+function applyPct(v,pct){return Math.round(v*(1+pct/100))}
+function tempIndex(t){return TEMPS.indexOf(t)}
+
+function setRunway(rwy,manual=true){
+  selectedRunway=rwy;
+  if(manual)runwayManuallySelected=true;
+  $("rwy09").classList.toggle("active",rwy==="09");
+  $("rwy27").classList.toggle("active",rwy==="27");
+  $("planeWrap").classList.toggle("rwy27",rwy==="27");
+  const d=RUNWAYS[rwy];
+  $("headingText").textContent=`${String(d.magnetic).padStart(3,"0")}°M · ${d.trueBearing.toFixed(2)}°T`;
+  $("elevText").textContent=`${d.elevation} ft`;
+  $("runwayBadge").textContent=`RWY ${rwy} · 4,708 ft available`;
+  updateWindVisual();
+}
+
+function drawWind(wd){
+  const line=$("windLine");
+  if(!Number.isFinite(wd)){
+    line.setAttribute("opacity",".18");
+    return;
+  }
+  const theta=wd*Math.PI/180;
+  const cx=500,cy=250,L=300;
+  const ux=Math.sin(theta),uy=-Math.cos(theta); // direction FROM center toward source
+  const x1=cx+ux*L/2,y1=cy+uy*L/2;             // source side
+  const x2=cx-ux*L/2,y2=cy-uy*L/2;             // wind travels toward here
+  line.setAttribute("x1",x1);line.setAttribute("y1",y1);
+  line.setAttribute("x2",x2);line.setAttribute("y2",y2);
+  line.setAttribute("opacity",".88");
+}
+
+function recommendedRunway(wd,ws){
+  if(!Number.isFinite(wd)||!Number.isFinite(ws)||ws<=0)return null;
+  const a09=windComponents(wd,ws,RUNWAYS["09"].trueBearing).along;
+  const a27=windComponents(wd,ws,RUNWAYS["27"].trueBearing).along;
+  if(Math.abs(a09-a27)<1)return null;
+  return a09>a27?"09":"27";
+}
+
+function updateWindVisual(){
+  const wd=blank("windDir")?NaN:num("windDir");
+  const ws=blank("windSpd")?NaN:num("windSpd");
+  drawWind(wd);
+
+  if(!Number.isFinite(wd)||!Number.isFinite(ws)||ws<0){
+    $("windLabel").textContent="Wind —";
+    $("headPill").textContent="H/T —";
+    $("crossPill").textContent="XW —";
+    $("runwayTip").innerHTML='METAR normalde <strong>aktif pist</strong> söylemez. Rüzgâr geldiğinde burada hangi pistin daha fazla headwind verdiğini göstereceğim; gerçek pist seçimi yine ATC/operasyon bilgisidir.';
+    return;
+  }
+
+  const r=RUNWAYS[selectedRunway];
+  const c=windComponents(wd,ws,r.trueBearing);
+  $("windLabel").textContent=`FROM ${String(Math.round(wd)).padStart(3,"0")}°T · ${ws} kt`;
+  $("headPill").textContent=c.along>=0?`${Math.abs(c.along).toFixed(1)} kt HW`:`${Math.abs(c.along).toFixed(1)} kt TW`;
+  $("crossPill").textContent=Math.abs(c.cross)<.05?"0.0 kt XW":`${Math.abs(c.cross).toFixed(1)} kt XW ${c.cross>0?"R":"L"}`;
+
+  const rec=recommendedRunway(wd,ws);
+  if(rec){
+    const rr=RUNWAYS[rec];
+    const rc=windComponents(wd,ws,rr.trueBearing);
+    $("runwayTip").innerHTML=`Rüzgâra göre <strong>RWY ${rec}</strong> daha fazla headwind veriyor (${Math.max(0,rc.along).toFixed(1)} kt). Bu yalnızca rüzgâr bazlı tahmindir; gerçek aktif pist ATC/operasyon bilgisidir.`;
+  }else{
+    $("runwayTip").innerHTML='Rüzgâr neredeyse saf crosswind. <strong>METAR tek başına aktif pisti kesin söylemez.</strong>';
+  }
+}
+
+function parseRawMetar(raw){
+  const txt=(raw||"").trim().toUpperCase();
+  if(!txt.includes("LTBD"))throw new Error("LTBD METAR bulunamadı.");
+  const time=txt.match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+  const wind=txt.match(/\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b/);
+  const temp=txt.match(/\b(M?\d{2})\/(M?\d{2}|\/\/)\b/);
+  const qnh=txt.match(/\bQ(\d{4})\b/);
+  const out={rawOb:txt};
+  if(time)out.obsGroup=time[0];
+  if(wind){out.wdir=wind[1]==="VRB"?null:Number(wind[1]);out.wspd=Number(wind[2]);out.wgst=wind[3]?Number(wind[3]):null}
+  if(temp)out.temp=temp[1].startsWith("M")?-Number(temp[1].slice(1)):Number(temp[1]);
+  if(qnh)out.altim=Number(qnh[1]);
+  return out;
+}
+
+function populateFromMetar(m){
+  if(!m)return;
+  if(Number.isFinite(Number(m.temp)))$("oat").value=Math.round(Number(m.temp));
+  if(Number.isFinite(Number(m.altim)))$("qnh").value=Math.round(Number(m.altim));
+  if(m.wdir!==null&&m.wdir!==undefined&&Number.isFinite(Number(m.wdir)))$("windDir").value=Math.round(Number(m.wdir));
+  if(Number.isFinite(Number(m.wspd)))$("windSpd").value=Number(m.wspd);
+  $("rawMetar").textContent=m.rawOb||"METAR alındı.";
+
+  let label="LTBD METAR";
+  if(m.reportTime){
+    const dt=new Date(m.reportTime);
+    if(!isNaN(dt))label+=` · ${String(dt.getUTCDate()).padStart(2,"0")} ${String(dt.getUTCHours()).padStart(2,"0")}${String(dt.getUTCMinutes()).padStart(2,"0")}Z`;
+  }else if(m.obsGroup)label+=` · ${m.obsGroup}`;
+  $("metarStatus").textContent=label;
+  $("metarDot").className="dot ok";
+  updateWindVisual();
+}
+
+function loadMetar(){
+  $("metarStatus").textContent="Otomatik LTBD METAR kontrol ediliyor…";
+  $("metarDot").className="dot";
+  try{
+    const el=document.getElementById("embedded-metar");
+    const m=JSON.parse(el?el.textContent:"{}");
+    if(!m||!m.rawOb)throw new Error("Henüz otomatik METAR yok");
+    populateFromMetar(m);
+  }catch(err){
+    $("metarStatus").textContent="Auto METAR henüz yok · manuel giriş açık";
+    $("metarDot").className="dot warn";
+    $("rawMetar").textContent="GitHub Action ilk kez çalıştıktan sonra son LTBD METAR HTML içine otomatik yazılır. Şimdilik raw METAR yapıştırabilir veya değerleri elle girebilirsin.";
+  }
+}
+
+function showError(message){
+  $("results").classList.add("show");
+  $("notice").textContent=message;
+  $("notice").className="notice bad";
+  ["toRoll","to50","ldgRoll","ldg50"].forEach(id=>$(id).textContent="—");
+  ["toRollM","to50M","ldgRollM","ldg50M"].forEach(id=>$(id).textContent="—");
+  $("results").scrollIntoView({behavior:"smooth",block:"start"});
+}
+
+function calculate(){
+  try{
+    // Explicit missing-field validation first — no empty string becomes numeric zero.
+    if(blank("weight"))throw new Error("Takeoff Weight girilmedi.");
+    if(blank("oat"))throw new Error("Sıcaklık girilmedi.");
+    if(blank("qnh"))throw new Error("QNH girilmedi.");
+    if(blank("windDir"))throw new Error("Wind Direction girilmedi.");
+    if(blank("windSpd"))throw new Error("Wind Speed girilmedi.");
+
+    const weight=num("weight"),oat=num("oat"),qnh=num("qnh"),windDir=num("windDir"),windSpd=num("windSpd");
+
+    if(!Number.isFinite(weight)||weight<=0)throw new Error("Takeoff Weight geçerli değil.");
+    if(weight>2550)throw new Error("Takeoff Weight 2550 lb üzerinde.");
+    if(!Number.isFinite(oat))throw new Error("Sıcaklık geçerli değil.");
+    if(oat>40)throw new Error("OAT 40°C üzerinde; POH tablosu dışında.");
+    if(!Number.isFinite(qnh)||qnh<850||qnh>1100)throw new Error("QNH değerini kontrol et.");
+    if(!Number.isFinite(windDir)||windDir<0||windDir>360)throw new Error("Wind Direction 000–360° olmalı.");
+    if(!Number.isFinite(windSpd)||windSpd<0)throw new Error("Wind Speed geçerli değil.");
+
+    const r=RUNWAYS[selectedRunway];
+    const paActual=pressureAltitude(r.elevation,qnh);
+    if(paActual>8000)throw new Error("Pressure Altitude 8000 ft üzerinde; POH tablosu dışında.");
+
+    const wSel=selectConservative(weight,WEIGHTS,"Weight");
+    const tSel=selectConservative(oat,TEMPS,"Temperature");
+    const paSel=selectConservative(paActual,ALTITUDES,"Pressure altitude");
+    const ti=tempIndex(tSel);
+
+    const toBase=TAKEOFF[wSel][paSel][ti];
+    const ldgBase=LANDING[paSel][ti];
+    const comps=windComponents(windDir,windSpd,r.trueBearing);
+
+    if(comps.along<-10.0001)throw new Error("Tailwind component 10 kt üzerinde; POH wind-correction notunun dışında.");
+
+    const pct=pohWindCorrectionPercent(comps.along);
+    const vals={
+      toRoll:applyPct(toBase[0],pct),
+      to50:applyPct(toBase[1],pct),
+      ldgRoll:applyPct(ldgBase[0],pct),
+      ldg50:applyPct(ldgBase[1],pct)
+    };
+
+    const setVal=(id,idM,v)=>{$(id).textContent=`${v.toLocaleString("en-US")} ft`;$(idM).textContent=`${ftToM(v)} m`};
+    setVal("toRoll","toRollM",vals.toRoll);setVal("to50","to50M",vals.to50);
+    setVal("ldgRoll","ldgRollM",vals.ldgRoll);setVal("ldg50","ldg50M",vals.ldg50);
+
+    [["toRollBar",vals.toRoll],["to50Bar",vals.to50],["ldgRollBar",vals.ldgRoll],["ldg50Bar",vals.ldg50]].forEach(([id,v])=>{
+      $(id).style.width=`${Math.min(100,(v/RUNWAY_LENGTH_FT)*100)}%`;
+      $(id).style.background=v>RUNWAY_LENGTH_FT?"var(--bad)":(v>RUNWAY_LENGTH_FT*.75?"var(--warn)":"var(--accent)");
+    });
+
+    $("dWeight").textContent=`${Math.round(weight)} → ${wSel} lb`;
+    $("dPA").textContent=`${Math.round(paActual)} → ${paSel} ft`;
+    $("dTemp").textContent=`${oat} → ${tSel}°C`;
+    $("dTOBase").textContent=`${toBase[0]} / ${toBase[1]} ft`;
+    $("dLdgBase").textContent=`${ldgBase[0]} / ${ldgBase[1]} ft`;
+    $("dRwyTrue").textContent=`${r.trueBearing.toFixed(2)}°T`;
+    $("dComponent").textContent=comps.along>=0?`${Math.abs(comps.along).toFixed(1)} kt headwind`:`${Math.abs(comps.along).toFixed(1)} kt tailwind`;
+    $("dWindPct").textContent=`${pct>0?"+":""}${pct}%`;
+    $("dTOMargin").textContent=`${(RUNWAY_LENGTH_FT-vals.to50).toLocaleString("en-US")} ft`;
+    $("dLdgMargin").textContent=`${(RUNWAY_LENGTH_FT-vals.ldg50).toLocaleString("en-US")} ft`;
+
+    const notes=[];
+    if(paActual>0&&paActual<1000)notes.push(`PA ${Math.round(paActual)} ft olduğu için konservatif tabloda bir üst satır olan 1000 ft kullanıldı.`);
+    if(vals.to50>RUNWAY_LENGTH_FT||vals.ldg50>RUNWAY_LENGTH_FT)notes.push("50-ft mesafesi mevcut 4,708 ft pist uzunluğunu aşıyor.");
+    notes.push("Short-field, paved/level/dry runway POH verisidir; güncel uçak POH/AFM ve operasyon bilgisiyle doğrula.");
+    $("notice").textContent=notes.join(" ");
+    $("notice").className=(vals.to50>RUNWAY_LENGTH_FT||vals.ldg50>RUNWAY_LENGTH_FT)?"notice bad":"notice";
+    $("results").classList.add("show");
+    $("results").scrollIntoView({behavior:"smooth",block:"start"});
+  }catch(err){showError(err.message||String(err))}
+}
+
+$("rwy09").addEventListener("click",()=>setRunway("09",true));
+$("rwy27").addEventListener("click",()=>setRunway("27",true));
+["windDir","windSpd"].forEach(id=>$(id).addEventListener("input",updateWindVisual));
+$("calculate").addEventListener("click",calculate);
+$("reloadMetar").addEventListener("click",()=>location.reload());
+$("parseMetar").addEventListener("click",()=>{
+  try{populateFromMetar(parseRawMetar($("metarPaste").value))}
+  catch(e){$("metarStatus").textContent=e.message;$("metarDot").className="dot warn"}
+});
+
+setRunway("09",false);
+loadMetar();
+</script>
+</body>
+</html>

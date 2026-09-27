@@ -1,0 +1,93 @@
+name: Update LTBD METAR
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "*/10 * * * *"
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Fetch latest LTBD METAR and embed it
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          code="$(curl -sS \
+            -A "C172-LTBD-Performance/3.0 GitHub-Actions" \
+            -w "%{http_code}" \
+            -o /tmp/metar.json \
+            "https://aviationweather.gov/api/data/metar?ids=LTBD&format=json")"
+
+          if [ "$code" != "200" ]; then
+            echo "METAR HTTP $code; keeping previous METAR."
+            exit 0
+          fi
+
+          if ! jq -e 'type=="array" and length>0 and .[0].rawOb' /tmp/metar.json >/dev/null; then
+            echo "No valid LTBD METAR returned; keeping previous METAR."
+            exit 0
+          fi
+
+          python3 - <<'PY'
+          import json, re
+          from pathlib import Path
+
+          src = json.loads(Path("/tmp/metar.json").read_text())[0]
+
+          m = {
+              "rawOb": src.get("rawOb", ""),
+              "reportTime": src.get("reportTime") or src.get("obsTime"),
+              "temp": src.get("temp"),
+              "wdir": src.get("wdir"),
+              "wspd": src.get("wspd"),
+              "wgst": src.get("wgst"),
+              "altim": src.get("altim"),
+          }
+
+          # API altimeter may be in inHg. Convert to hPa when needed.
+          try:
+              a=float(m["altim"])
+              if a < 100:
+                  m["altim"]=round(a*33.8638866667)
+          except Exception:
+              pass
+
+          p=Path("index.html")
+          txt=p.read_text(encoding="utf-8")
+          payload=json.dumps(m,ensure_ascii=False,separators=(",",":"))
+          block=(
+              '<!-- METAR_AUTO_START -->\n'
+              '<script id="embedded-metar" type="application/json">\n'
+              + payload +
+              '\n</script>\n'
+              '<!-- METAR_AUTO_END -->'
+          )
+          txt2,n=re.subn(
+              r'<!-- METAR_AUTO_START -->.*?<!-- METAR_AUTO_END -->',
+              block,txt,count=1,flags=re.S
+          )
+          if n != 1:
+              raise SystemExit("METAR block not found")
+          p.write_text(txt2,encoding="utf-8")
+          PY
+
+      - name: Commit if METAR changed
+        shell: bash
+        run: |
+          if git diff --quiet -- index.html; then
+            echo "No METAR change."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add index.html
+          git commit -m "Update LTBD METAR"
+          git push
