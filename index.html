@@ -39,7 +39,7 @@ h1{font-size:clamp(36px,6vw,66px);line-height:.98;letter-spacing:-.052em;margin:
 .rwy-switch button.active{background:#fff;color:var(--text);box-shadow:0 2px 10px rgba(0,0,0,.08)}
 .airport-line{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:15px}
 .mini{padding:13px 14px;border:1px solid var(--line);border-radius:17px;background:rgba(255,255,255,.46)}
-.mini span{display:block;color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px}
+.mini span{display:block;color:var(--muted);font-size:11px;text-transform:none;letter-spacing:.07em;margin-bottom:4px}
 .mini strong{font-size:15px;letter-spacing:-.01em}
 
 .visual{position:relative;height:318px;border-radius:23px;overflow:hidden;margin-top:16px;background:linear-gradient(180deg,#fafafa,#e9e9ed)}
@@ -122,7 +122,7 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
 .result-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:16px}
 .result-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
 .result{border:1px solid var(--line);background:rgba(255,255,255,.64);border-radius:20px;padding:18px;min-height:132px;display:flex;flex-direction:column;justify-content:space-between}
-.result .name{color:var(--muted);font-size:12px;font-weight:850;letter-spacing:.04em;text-transform:uppercase}
+.result .name{color:var(--muted);font-size:12px;font-weight:850;letter-spacing:.04em;text-transform:none}
 .result .value{font-size:34px;font-weight:850;letter-spacing:-.04em;margin-top:9px}
 .result .metric{font-size:13px;color:var(--muted);margin-top:2px}
 .bar{height:6px;background:#e5e5ea;border-radius:99px;overflow:hidden;margin-top:12px}.bar i{display:block;height:100%;background:var(--accent);border-radius:99px}
@@ -178,8 +178,8 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
 
       <div class="airport-line">
         <div class="mini"><span>HEADING</span><strong id="headingText">087°M · 091.50°T</strong></div>
-        <div class="mini"><span>TDZ Elev.</span><strong id="elevText">100 ft</strong></div>
-        <div class="mini"><span>Available</span><strong>4,708 ft</strong></div>
+        <div class="mini"><span>TDZ ELEV.</span><strong id="elevText">100 ft</strong></div>
+        <div class="mini"><span>AVAILABLE</span><strong>4,708 ft</strong></div>
       </div>
 
       <div class="visual" id="visual">
@@ -235,7 +235,7 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
           </div>
           <div style="display:flex;gap:7px">
             <a class="btn-small" href="https://hezarfen.mgm.gov.tr/HzUsr/default.aspx" target="_blank" rel="noopener">Hezarfen</a>
-            <button class="btn-small" id="reloadMetar" type="button">Sayfayı yenile</button>
+            <button class="btn-small" id="reloadMetar" type="button">Yenile</button>
           </div>
         </div>
         <div class="raw" id="rawMetar">GitHub Action ilk kez çalıştıktan sonra son LTBD METAR burada otomatik görünür.</div>
@@ -252,7 +252,7 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
           <div class="input-wrap"><input id="qnh" inputmode="decimal" placeholder="1015"><span class="unit">hPa</span></div>
         </div>
         <div>
-          <label for="windDir">Wind Dir.</label>
+          <label for="windDir">Wind Direction</label>
           <div class="input-wrap"><input id="windDir" inputmode="numeric" placeholder="070"><span class="unit">°T</span></div>
         </div>
         <div>
@@ -291,19 +291,19 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
 
       <div class="result-grid">
         <div class="result">
-          <div><div class="name">Takeoff Roll</div><div class="value" id="toRoll">—</div><div class="metric" id="toRollM">—</div></div>
+          <div><div class="name">TAKEOFF ROLL</div><div class="value" id="toRoll">—</div><div class="metric" id="toRollM">—</div></div>
           <div class="bar"><i id="toRollBar"></i></div>
         </div>
         <div class="result">
-          <div><div class="name">Takeoff · 50 ft</div><div class="value" id="to50">—</div><div class="metric" id="to50M">—</div></div>
+          <div><div class="name">TAKEOFF · 50 FT</div><div class="value" id="to50">—</div><div class="metric" id="to50M">—</div></div>
           <div class="bar"><i id="to50Bar"></i></div>
         </div>
         <div class="result">
-          <div><div class="name">Landing Roll</div><div class="value" id="ldgRoll">—</div><div class="metric" id="ldgRollM">—</div></div>
+          <div><div class="name">LANDING ROLL</div><div class="value" id="ldgRoll">—</div><div class="metric" id="ldgRollM">—</div></div>
           <div class="bar"><i id="ldgRollBar"></i></div>
         </div>
         <div class="result">
-          <div><div class="name">Landing · 50 ft</div><div class="value" id="ldg50">—</div><div class="metric" id="ldg50M">—</div></div>
+          <div><div class="name">LANDING · 50 FT</div><div class="value" id="ldg50">—</div><div class="metric" id="ldg50M">—</div></div>
           <div class="bar"><i id="ldg50Bar"></i></div>
         </div>
       </div>
@@ -529,6 +529,46 @@ function populateFromMetar(m){
   updateWindVisual();
 }
 
+
+async function refreshMetarNow(){
+  const btn=$("reloadMetar");
+  const oldText=btn.textContent;
+  btn.disabled=true;
+  btn.textContent="Çekiliyor…";
+  $("metarStatus").textContent="Son LTBD METAR alınıyor…";
+  $("metarDot").className="dot";
+
+  const urls=[
+    "https://raw.githubusercontent.com/melihbalikci/c172-performance/main/index.html?ts="+Date.now(),
+    location.pathname+"?metarRefresh="+Date.now()
+  ];
+
+  let lastError=null;
+  for(const url of urls){
+    try{
+      const res=await fetch(url,{cache:"no-store"});
+      if(!res.ok)throw new Error("HTTP "+res.status);
+      const text=await res.text();
+      const match=text.match(/<script id="embedded-metar" type="application\/json">\s*([\s\S]*?)\s*<\/script>/);
+      if(!match)throw new Error("METAR bloğu bulunamadı");
+      const m=JSON.parse(match[1]);
+      if(!m||!m.rawOb)throw new Error("LTBD METAR henüz güncellenmemiş");
+      populateFromMetar(m);
+      btn.textContent="Güncel ✓";
+      setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
+      return;
+    }catch(e){
+      lastError=e;
+    }
+  }
+
+  $("metarStatus").textContent="Son otomatik METAR alınamadı";
+  $("metarDot").className="dot warn";
+  btn.textContent=oldText;
+  btn.disabled=false;
+  console.warn(lastError);
+}
+
 function loadMetar(){
   $("metarStatus").textContent="Otomatik LTBD METAR kontrol ediliyor…";
   $("metarDot").className="dot";
@@ -630,7 +670,7 @@ $("rwy09").addEventListener("click",()=>setRunway("09",true));
 $("rwy27").addEventListener("click",()=>setRunway("27",true));
 ["windDir","windSpd"].forEach(id=>$(id).addEventListener("input",updateWindVisual));
 $("calculate").addEventListener("click",calculate);
-$("reloadMetar").addEventListener("click",()=>location.reload());
+$("reloadMetar").addEventListener("click",refreshMetarNow);
 $("parseMetar").addEventListener("click",()=>{
   try{populateFromMetar(parseRawMetar($("metarPaste").value))}
   catch(e){$("metarStatus").textContent=e.message;$("metarDot").className="dot warn"}
