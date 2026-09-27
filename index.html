@@ -339,7 +339,7 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
 
 <!-- METAR_AUTO_START -->
 <script id="embedded-metar" type="application/json">
-{"rawOb":"METAR LTBD 271550Z 00000KT 9999 SCT035 BKN080 20/17 Q1011 RESHRA","reportTime":"2026-09-27T16:00:00.000Z","temp":20,"wdir":0,"wspd":0,"wgst":null,"altim":1011}
+{"rawOb":"METAR LTBD 271450Z 00000KT 8000 -SHRA SCT035 BKN080 20/16 Q1011","reportTime":"2026-09-27T15:00:00.000Z","temp":20,"wdir":0,"wspd":0,"wgst":null,"altim":1011}
 </script>
 <!-- METAR_AUTO_END -->
 
@@ -540,41 +540,57 @@ async function refreshMetarNow(){
   const oldText=btn.textContent;
   btn.disabled=true;
   btn.textContent="Çekiliyor…";
-  $("metarStatus").textContent="MGM Rasat kontrol ediliyor…";
+  $("metarStatus").textContent="Son LTBD METAR yenileniyor…";
   $("metarDot").className="dot";
 
-  // Önce MGM Rasat'ı doğrudan dene.
+  // 1) SAME-ORIGIN: hard refresh ile gördüğün en güncel GitHub Pages sürümünü al.
+  // Bu, butona basınca eski raw.githubusercontent cache'ine düşme problemini engeller.
   try{
-    const mgmUrl="https://rasat.mgm.gov.tr/result?stations=LTBD&obsType=1&obsType=2&hours=0&ts="+Date.now();
-    const res=await fetch(mgmUrl,{cache:"no-store"});
-    if(res.ok){
-      const text=await res.text();
-      const matches=[...text.matchAll(/(?:METAR|SPECI)\s+LTBD\s+\d{6}Z[^<\r\n]*/g)];
-      if(matches.length){
-        const raw=matches[0][0].replace(/\s+/g," ").trim().replace(/\s*=$/,"");
-        const m=parseRawMetar(raw.replace(/^SPECI /,"METAR "));
-        m.rawOb=raw;
-        populateFromMetar(m);
-        btn.textContent="Güncel ✓";
-        setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
-        return;
-      }
-    }
-  }catch(e){
-    console.info("MGM browser fetch blocked/unavailable; GitHub embedded METAR kullanılacak.",e);
-  }
-
-  // Fallback: GitHub Action'ın son gömdüğü METAR.
-  try{
-    const url="https://raw.githubusercontent.com/melihbalikci/c172-performance/main/index.html?ts="+Date.now();
-    const res=await fetch(url,{cache:"no-store"});
+    const pageUrl=location.pathname+"?metarRefresh="+Date.now();
+    const res=await fetch(pageUrl,{
+      cache:"no-store",
+      headers:{"Cache-Control":"no-cache"}
+    });
     if(!res.ok)throw new Error("HTTP "+res.status);
+
     const text=await res.text();
     const match=text.match(/<script id="embedded-metar" type="application\/json">\s*([\s\S]*?)\s*<\/script>/);
     if(!match)throw new Error("METAR bloğu bulunamadı");
+
     const m=JSON.parse(match[1]);
-    if(!m||!m.rawOb)throw new Error("LTBD METAR henüz güncellenmemiş");
+    if(!m||!m.rawOb)throw new Error("Güncel LTBD METAR bulunamadı");
+
     populateFromMetar(m);
+    btn.textContent="Güncel ✓";
+    setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
+    return;
+  }catch(e){
+    console.info("Same-origin METAR refresh failed; MGM direct fallback deneniyor.",e);
+  }
+
+  // 2) FALLBACK: MGM Rasat'ı doğrudan dene.
+  // Birden fazla METAR varsa ilkini değil, DDHHMMZ olarak en yenisini seç.
+  try{
+    const mgmUrl="https://rasat.mgm.gov.tr/result?stations=LTBD&obsType=1&obsType=2&hours=0&ts="+Date.now();
+    const res=await fetch(mgmUrl,{cache:"no-store"});
+    if(!res.ok)throw new Error("HTTP "+res.status);
+
+    const text=await res.text();
+    const matches=[...text.matchAll(/(?:METAR|SPECI)\s+LTBD\s+\d{6}Z[^<\r\n]*/g)];
+    if(!matches.length)throw new Error("MGM içinde LTBD METAR bulunamadı");
+
+    const reports=matches.map(x=>x[0].replace(/\s+/g," ").trim().replace(/\s*=$/,""));
+    reports.sort((a,b)=>{
+      const ta=(a.match(/\b(\d{6})Z\b/)||[])[1]||"000000";
+      const tb=(b.match(/\b(\d{6})Z\b/)||[])[1]||"000000";
+      return tb.localeCompare(ta);
+    });
+
+    const raw=reports[0];
+    const m=parseRawMetar(raw.replace(/^SPECI /,"METAR "));
+    m.rawOb=raw;
+    populateFromMetar(m);
+
     btn.textContent="Güncel ✓";
     setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
     return;
