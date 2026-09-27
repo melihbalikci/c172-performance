@@ -339,7 +339,7 @@ summary{cursor:pointer;color:var(--accent);font-weight:750;font-size:13px}
 
 <!-- METAR_AUTO_START -->
 <script id="embedded-metar" type="application/json">
-{"rawOb":"METAR LTBD 271550Z 00000KT 9999 SCT035 BKN080 20/17 Q1011 RESHRA","reportTime":"2026-09-27T16:00:00.000Z","temp":20,"wdir":0,"wspd":0,"wgst":null,"altim":1011}
+{"rawOb":"METAR LTBD 271450Z 00000KT 8000 -SHRA SCT035 BKN080 20/16 Q1011","reportTime":"2026-09-27T15:00:00.000Z","temp":20,"wdir":0,"wspd":0,"wgst":null,"altim":1011}
 </script>
 <!-- METAR_AUTO_END -->
 
@@ -405,6 +405,7 @@ const WEIGHTS=[2200,2400,2550];
 const $=id=>document.getElementById(id);
 let selectedRunway="09";
 let runwayManuallySelected=false;
+let currentMetar=null;
 
 function blank(id){return $(id).value.trim()===""}
 function num(id){return Number($(id).value)}
@@ -511,111 +512,128 @@ function parseRawMetar(raw){
   return out;
 }
 
-function populateFromMetar(m){
+
+function metarEpoch(m){
+  const raw=(m&&m.rawOb)||"";
+  const hit=raw.match(/\b(\d{2})(\d{2})(\d{2})Z\b/);
+  if(!hit)return 0;
+
+  const day=Number(hit[1]),hour=Number(hit[2]),minute=Number(hit[3]);
+  const now=new Date();
+  const y=now.getUTCFullYear(),mon=now.getUTCMonth();
+  const candidates=[];
+
+  for(const dm of [-1,0,1]){
+    const d=new Date(Date.UTC(y,mon+dm,day,hour,minute,0));
+    if(d.getUTCDate()===day)candidates.push(d.getTime());
+  }
+  if(!candidates.length)return 0;
+
+  const nowMs=now.getTime();
+  const allowedFuture=nowMs+5*60*1000;
+  const past=candidates.filter(x=>x<=allowedFuture);
+  if(past.length)return Math.max(...past);
+  return candidates.reduce((a,b)=>Math.abs(a-nowMs)<Math.abs(b-nowMs)?a:b);
+}
+
+function populateFromMetar(m,sourceLabel=""){
   if(!m)return;
+  currentMetar=m;
+
   if(Number.isFinite(Number(m.temp)))$("oat").value=Math.round(Number(m.temp));
   if(Number.isFinite(Number(m.altim)))$("qnh").value=Math.round(Number(m.altim));
   if(m.wdir!==null&&m.wdir!==undefined&&Number.isFinite(Number(m.wdir)))$("windDir").value=Math.round(Number(m.wdir));
   if(Number.isFinite(Number(m.wspd)))$("windSpd").value=Number(m.wspd);
+
   $("rawMetar").textContent=m.rawOb||"METAR alındı.";
 
   let label="LTBD METAR";
   const rawTime=(m.rawOb||"").match(/\b(\d{6}Z)\b/);
-  if(rawTime){
-    label+=` · ${rawTime[1]}`;
-  }else if(m.obsGroup){
-    label+=` · ${m.obsGroup}`;
-  }else if(m.reportTime){
-    const dt=new Date(m.reportTime);
-    if(!isNaN(dt))label+=` · ${String(dt.getUTCDate()).padStart(2,"0")} ${String(dt.getUTCHours()).padStart(2,"0")}${String(dt.getUTCMinutes()).padStart(2,"0")}Z`;
-  }
+  if(rawTime)label+=` · ${rawTime[1]}`;
+  else if(m.obsGroup)label+=` · ${m.obsGroup}`;
+
+  if(sourceLabel)label+=` · ${sourceLabel}`;
   $("metarStatus").textContent=label;
   $("metarDot").className="dot ok";
   updateWindVisual();
 }
 
-
-async function refreshMetarNow(){
+async function fetchLiveMetar(showButtonState=true){
   const btn=$("reloadMetar");
   const oldText=btn.textContent;
-  btn.disabled=true;
-  btn.textContent="Çekiliyor…";
-  $("metarStatus").textContent="Son LTBD METAR yenileniyor…";
-  $("metarDot").className="dot";
 
-  // 1) SAME-ORIGIN: hard refresh ile gördüğün en güncel GitHub Pages sürümünü al.
-  // Bu, butona basınca eski raw.githubusercontent cache'ine düşme problemini engeller.
-  try{
-    const pageUrl=location.pathname+"?metarRefresh="+Date.now();
-    const res=await fetch(pageUrl,{
-      cache:"no-store",
-      headers:{"Cache-Control":"no-cache"}
-    });
-    if(!res.ok)throw new Error("HTTP "+res.status);
-
-    const text=await res.text();
-    const match=text.match(/<script id="embedded-metar" type="application\/json">\s*([\s\S]*?)\s*<\/script>/);
-    if(!match)throw new Error("METAR bloğu bulunamadı");
-
-    const m=JSON.parse(match[1]);
-    if(!m||!m.rawOb)throw new Error("Güncel LTBD METAR bulunamadı");
-
-    populateFromMetar(m);
-    btn.textContent="Güncel ✓";
-    setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
-    return;
-  }catch(e){
-    console.info("Same-origin METAR refresh failed; MGM direct fallback deneniyor.",e);
+  if(showButtonState){
+    btn.disabled=true;
+    btn.textContent="Çekiliyor…";
+    $("metarStatus").textContent="Canlı LTBD METAR kontrol ediliyor…";
+    $("metarDot").className="dot";
   }
 
-  // 2) FALLBACK: MGM Rasat'ı doğrudan dene.
-  // Birden fazla METAR varsa ilkini değil, DDHHMMZ olarak en yenisini seç.
   try{
-    const mgmUrl="https://rasat.mgm.gov.tr/result?stations=LTBD&obsType=1&obsType=2&hours=0&ts="+Date.now();
-    const res=await fetch(mgmUrl,{cache:"no-store"});
+    // IEM Current Obs has permissive CORS, so this can be queried directly
+    // from GitHub Pages without waiting for a GitHub Action deploy.
+    const url="https://mesonet.agron.iastate.edu/json/current.py?station=LTBD&network=TR__ASOS&ts="+Date.now();
+    const res=await fetch(url,{cache:"no-store"});
     if(!res.ok)throw new Error("HTTP "+res.status);
 
-    const text=await res.text();
-    const matches=[...text.matchAll(/(?:METAR|SPECI)\s+LTBD\s+\d{6}Z[^<\r\n]*/g)];
-    if(!matches.length)throw new Error("MGM içinde LTBD METAR bulunamadı");
+    const data=await res.json();
+    const raw=data?.last_ob?.raw;
+    if(!raw)throw new Error("Canlı LTBD raw METAR bulunamadı");
 
-    const reports=matches.map(x=>x[0].replace(/\s+/g," ").trim().replace(/\s*=$/,""));
-    reports.sort((a,b)=>{
-      const ta=(a.match(/\b(\d{6})Z\b/)||[])[1]||"000000";
-      const tb=(b.match(/\b(\d{6})Z\b/)||[])[1]||"000000";
-      return tb.localeCompare(ta);
-    });
+    const candidate=parseRawMetar(raw);
+    candidate.rawOb=raw;
+    candidate.source="IEM Live";
 
-    const raw=reports[0];
-    const m=parseRawMetar(raw.replace(/^SPECI /,"METAR "));
-    m.rawOb=raw;
-    populateFromMetar(m);
+    const currentEpoch=metarEpoch(currentMetar);
+    const candidateEpoch=metarEpoch(candidate);
 
-    btn.textContent="Güncel ✓";
-    setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
-    return;
+    if(!currentMetar || candidateEpoch>=currentEpoch){
+      populateFromMetar(candidate,"LIVE");
+    }else if(showButtonState){
+      // Never downgrade a newer embedded METAR to an older live feed.
+      populateFromMetar(currentMetar,"GÜNCEL");
+    }
+
+    if(showButtonState){
+      btn.textContent="Güncel ✓";
+      setTimeout(()=>{btn.textContent=oldText;btn.disabled=false},1200);
+    }
+    return true;
   }catch(e){
-    $("metarStatus").textContent="Son otomatik METAR alınamadı";
-    $("metarDot").className="dot warn";
-    btn.textContent=oldText;
-    btn.disabled=false;
-    console.warn(e);
+    console.warn("Live METAR fetch failed:",e);
+    if(showButtonState){
+      if(currentMetar)populateFromMetar(currentMetar,"SON KAYIT");
+      else{
+        $("metarStatus").textContent="Canlı METAR alınamadı";
+        $("metarDot").className="dot warn";
+      }
+      btn.textContent=oldText;
+      btn.disabled=false;
+    }
+    return false;
   }
+}
+
+function refreshMetarNow(){
+  fetchLiveMetar(true);
 }
 
 function loadMetar(){
   $("metarStatus").textContent="Otomatik LTBD METAR kontrol ediliyor…";
   $("metarDot").className="dot";
+
   try{
     const el=document.getElementById("embedded-metar");
     const m=JSON.parse(el?el.textContent:"{}");
     if(!m||!m.rawOb)throw new Error("Henüz otomatik METAR yok");
-    populateFromMetar(m);
+    populateFromMetar(m,"AUTO");
   }catch(err){
-    $("metarStatus").textContent="Auto METAR henüz yok · manuel giriş açık";
+    $("metarStatus").textContent="Auto METAR henüz yok · canlı kontrol";
     $("metarDot").className="dot warn";
-    $("rawMetar").textContent="GitHub Action ilk kez çalıştıktan sonra son LTBD METAR HTML içine otomatik yazılır. Şimdilik raw METAR yapıştırabilir veya değerleri elle girebilirsin.";
   }
+
+  // Page load'da da live source'u kontrol et. Daha yeni ise ekrana anında geçir.
+  fetchLiveMetar(false);
 }
 
 function showError(message){

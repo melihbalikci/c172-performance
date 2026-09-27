@@ -3,7 +3,7 @@ name: Update LTBD METAR
 on:
   workflow_dispatch:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "*/5 * * * *"
     - cron: "51 * * * *"
 
 permissions:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Fetch latest LTBD observation
+      - name: Fetch newest LTBD observation
         shell: bash
         run: |
           set -euo pipefail
@@ -30,13 +30,14 @@ jobs:
           from datetime import datetime, timezone, timedelta
 
           MGM_URL = "https://rasat.mgm.gov.tr/result?stations=LTBD&obsType=1&obsType=2&hours=0"
+          IEM_URL = "https://mesonet.agron.iastate.edu/json/current.py?station=LTBD&network=TR__ASOS"
           AWC_URL = "https://aviationweather.gov/api/data/metar?ids=LTBD&format=json"
 
           def fetch(url):
               req = urllib.request.Request(
                   url,
                   headers={
-                      "User-Agent": "C172-LTBD-Performance/10 GitHub-Actions",
+                      "User-Agent": "C172-LTBD-Performance/13 GitHub-Actions",
                       "Accept": "text/html,application/json;q=0.9,*/*;q=0.8",
                       "Cache-Control": "no-cache",
                   },
@@ -46,21 +47,17 @@ jobs:
 
           def report_datetime(group):
               now = datetime.now(timezone.utc)
-              day = int(group[0:2])
-              hour = int(group[2:4])
-              minute = int(group[4:6])
+              day = int(group[0:2]); hour = int(group[2:4]); minute = int(group[4:6])
               candidates = []
-              for shift in (-1, 0, 1):
+              for shift in (-1,0,1):
                   y = now.year
                   m = now.month + shift
                   while m < 1:
-                      y -= 1
-                      m += 12
+                      y -= 1; m += 12
                   while m > 12:
-                      y += 1
-                      m -= 12
+                      y += 1; m -= 12
                   try:
-                      candidates.append(datetime(y, m, day, hour, minute, tzinfo=timezone.utc))
+                      candidates.append(datetime(y,m,day,hour,minute,tzinfo=timezone.utc))
                   except ValueError:
                       pass
               past = [x for x in candidates if x <= now + timedelta(minutes=5)]
@@ -69,67 +66,75 @@ jobs:
           def parse_raw(raw, source):
               raw = re.sub(r"\s+", " ", raw).strip().rstrip("=").strip()
               tm = re.search(r"\b(\d{6}Z)\b", raw)
+              if not tm:
+                  raise ValueError("No DDHHMMZ in raw METAR")
+
               wind = re.search(r"\b(\d{3}|VRB)(\d{2,3})(?:G(\d{2,3}))?KT\b", raw)
               temp = re.search(r"\b(M?\d{2})/(M?\d{2}|//)\b", raw)
               qnh = re.search(r"\bQ(\d{4})\b", raw)
 
               def signed(s):
-                  if s is None:
-                      return None
+                  if s is None: return None
                   return -int(s[1:]) if s.startswith("M") else int(s)
 
               return {
                   "rawOb": raw,
-                  "obsGroup": tm.group(1) if tm else None,
+                  "obsGroup": tm.group(1),
                   "temp": signed(temp.group(1)) if temp else None,
-                  "wdir": None if (not wind or wind.group(1) == "VRB") else int(wind.group(1)),
+                  "wdir": None if (not wind or wind.group(1)=="VRB") else int(wind.group(1)),
                   "wspd": int(wind.group(2)) if wind else None,
                   "wgst": int(wind.group(3)) if wind and wind.group(3) else None,
                   "altim": int(qnh.group(1)) if qnh else None,
                   "source": source,
+                  "_dt": report_datetime(tm.group(1)),
               }
 
-          metar = None
+          candidates = []
 
-          # PRIMARY: MGM Rasat
+          # MGM Rasat
           try:
               page = htmlmod.unescape(fetch(MGM_URL))
               text = re.sub(r"<[^>]+>", "\n", page)
-              text = re.sub(r"[ \t]+", " ", text)
               reports = re.findall(
                   r"\b(?:METAR|SPECI)\s+LTBD\s+\d{6}Z[^\r\n]*",
                   text,
                   flags=re.I,
               )
-              cleaned = []
-              for x in reports:
-                  x = re.sub(r"\s+", " ", x).strip().rstrip("=").strip()
-                  g = re.search(r"\b(\d{6}Z)\b", x)
-                  if g:
-                      cleaned.append((report_datetime(g.group(1)), x))
-              if cleaned:
-                  cleaned.sort(key=lambda t: t[0], reverse=True)
-                  metar = parse_raw(cleaned[0][1], "MGM Rasat")
-                  print("MGM:", metar["rawOb"])
+              for raw in reports:
+                  try:
+                      candidates.append(parse_raw(raw, "MGM Rasat"))
+                  except Exception:
+                      pass
           except Exception as e:
-              print("MGM fetch failed:", repr(e))
+              print("MGM fetch/parse failed:", repr(e))
 
-          # FALLBACK: AviationWeather.gov only if MGM failed.
-          if metar is None:
-              try:
-                  data = json.loads(fetch(AWC_URL))
-                  if isinstance(data, list) and data and data[0].get("rawOb"):
-                      metar = parse_raw(data[0]["rawOb"], "AviationWeather.gov fallback")
-                      print("AWC fallback:", metar["rawOb"])
-              except Exception as e:
-                  print("AWC fallback failed:", repr(e))
+          # IEM live current observation
+          try:
+              data = json.loads(fetch(IEM_URL))
+              raw = (data.get("last_ob") or {}).get("raw")
+              if raw:
+                  candidates.append(parse_raw(raw, "IEM Live"))
+          except Exception as e:
+              print("IEM fetch failed:", repr(e))
 
-          if metar is None:
-              raise SystemExit("No usable LTBD METAR/SPECI found.")
+          # AviationWeather fallback
+          try:
+              data = json.loads(fetch(AWC_URL))
+              if isinstance(data,list) and data and data[0].get("rawOb"):
+                  candidates.append(parse_raw(data[0]["rawOb"], "AviationWeather.gov"))
+          except Exception as e:
+              print("AWC fetch failed:", repr(e))
+
+          if not candidates:
+              raise SystemExit("No usable LTBD METAR found from any source.")
+
+          newest = max(candidates, key=lambda x: x["_dt"])
+          print("Chosen:", newest["source"], newest["rawOb"])
+          newest.pop("_dt", None)
 
           p = Path("index.html")
           txt = p.read_text(encoding="utf-8")
-          payload = json.dumps(metar, ensure_ascii=False, separators=(",", ":"))
+          payload = json.dumps(newest, ensure_ascii=False, separators=(",", ":"))
           block = (
               '<!-- METAR_AUTO_START -->\n'
               '<script id="embedded-metar" type="application/json">\n'
@@ -139,13 +144,10 @@ jobs:
           )
           txt2, n = re.subn(
               r'<!-- METAR_AUTO_START -->.*?<!-- METAR_AUTO_END -->',
-              block,
-              txt,
-              count=1,
-              flags=re.S,
+              block, txt, count=1, flags=re.S
           )
           if n != 1:
-              raise SystemExit("METAR block not found in index.html")
+              raise SystemExit("METAR block not found")
           p.write_text(txt2, encoding="utf-8")
           PY
 
